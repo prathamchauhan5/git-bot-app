@@ -45,6 +45,11 @@ enum ExecutionStatus {
   FAILED
 }
 
+enum DeliveryStatus {
+  RECEIVED
+  PROCESSED
+}
+
 
 model User {
   id String @id @default(cuid())
@@ -112,5 +117,19 @@ model RuleExecution {
   status ExecutionStatus
   error String?
 
+  createdAt DateTime @default(now())
+}
+
+// Records every GitHub webhook delivery we accept so the same delivery is never
+// processed twice. deliveryId is GitHub's X-GitHub-Delivery GUID. A delivery is
+// created RECEIVED and flipped to PROCESSED once its rules have run; a retry of
+// an already-PROCESSED delivery is skipped, while a retry of one still RECEIVED
+// (a prior attempt that failed mid-way) is allowed to run again.
+model WebhookDelivery {
+  id String @id @default(cuid())
+  deliveryId String @unique
+  event String
+  status DeliveryStatus @default(RECEIVED)
+  processedAt DateTime?
   createdAt DateTime @default(now())
 }

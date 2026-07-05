@@ -13,6 +13,10 @@ const {
   describeTarget,
 } = require("../services/rule-engine.service");
 const { createExecution } = require("../services/rule-execution.service");
+const {
+  claimDelivery,
+  markProcessed,
+} = require("../services/webhook-delivery.service");
 
 // Verifies GitHub's HMAC-SHA256 signature. Only enforced when
 // GITHUB_WEBHOOK_SECRET is set, so local dev (e.g. via smee) works without it.
@@ -82,6 +86,20 @@ router.post("/github", async (req, res) => {
       });
     }
 
+    // Idempotency: never process the same GitHub delivery twice. GitHub stamps
+    // every delivery with a unique X-GitHub-Delivery GUID. If we've already
+    // finished this one, skip it; a delivery still RECEIVED (a prior attempt
+    // that failed mid-way) is allowed to run again so events aren't lost.
+    const deliveryId = req.headers["x-github-delivery"];
+    if (deliveryId) {
+      const seen = await claimDelivery(deliveryId, githubEvent);
+      if (seen && seen.status === "PROCESSED") {
+        return res.status(200).json({
+          message: "Duplicate delivery ignored",
+        });
+      }
+    }
+
     // The same GitHub repo can be connected by multiple users; process each
     // connected instance with its own owner's rules and access token.
     const repositories = await getRepositoriesByGithubId(payload.repository.id);
@@ -148,6 +166,12 @@ router.post("/github", async (req, res) => {
           });
         }
       }
+    }
+
+    // All rules ran (successes and failures are recorded as executions); mark
+    // the delivery done so a later retry of the same id is skipped.
+    if (deliveryId) {
+      await markProcessed(deliveryId);
     }
 
     return res.status(200).json({
