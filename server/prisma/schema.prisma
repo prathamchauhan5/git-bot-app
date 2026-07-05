@@ -1,0 +1,116 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EventType {
+  ISSUE_OPENED
+  PULL_REQUEST_OPENED
+  PUSH
+}
+
+enum ConditionType {
+  TITLE_CONTAINS
+}
+
+enum FilterField {
+  TITLE
+  AUTHOR
+  BRANCH
+}
+
+enum FilterOperator {
+  CONTAINS
+  EQUALS
+  STARTS_WITH
+  ENDS_WITH
+}
+
+enum ActionType {
+  ADD_LABEL
+  SEND_SLACK
+}
+
+enum ExecutionStatus {
+  SUCCESS
+  FAILED
+}
+
+
+model User {
+  id String @id @default(cuid())
+  githubId BigInt @unique
+  username String
+  avatarUrl String?
+  accessToken String
+  slackWebhookUrl String?
+  repository Repository?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Repository {
+  id String @id @default(cuid())
+  githubId BigInt
+  name String
+  fullName String
+  userId String @unique
+  user User @relation(fields: [userId], references: [id])
+  rules Rule[]
+  executions RuleExecution[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Rule {
+  id String @id @default(cuid())
+
+  repositoryId String
+  repository Repository @relation(fields: [repositoryId], references: [id])
+
+  event EventType
+
+  filterField FilterField?
+  filterOperator FilterOperator?
+  filterValue String?
+
+  actionType ActionType
+  actionValue String?
+
+  executions RuleExecution[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RuleExecution {
+  id String @id @default(cuid())
+
+  repositoryId String
+  repository Repository @relation(fields: [repositoryId], references: [id])
+
+  // Nullable + SetNull so history survives after a rule is deleted.
+  ruleId String?
+  rule Rule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  event EventType
+  target String
+  targetUrl String?
+
+  actionType ActionType
+  actionValue String
+
+  status ExecutionStatus
+  error String?
+
+  createdAt DateTime @default(now())
+}
